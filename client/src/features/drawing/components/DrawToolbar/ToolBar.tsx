@@ -2,7 +2,7 @@ import { useDrawingStore } from "../../../user/store/useDrawingStore";
 import { SocketManager } from "../../../../shared/services/SocketManager";
 
 export function Toolbar() {
-  const { tool, setTool, color, setColor } = useDrawingStore();
+  const { tool, setTool, color, setColor, strokeWidth, setStrokeWidth } = useDrawingStore();
 
   const handleReset = () => {
     SocketManager.emit('canvas:reset');
@@ -23,8 +23,8 @@ export function Toolbar() {
       >
         Gomme
       </button>
-
-      {/* Sélecteur de couleur - uniquement visible si on utilise le crayon */}
+      {/*P1*/}
+      {/* Couleur (visible avec le crayon) */}
       {tool === 'pen' && (
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Couleur:</label>
@@ -37,6 +37,20 @@ export function Toolbar() {
           <span className="text-sm text-gray-600">{color}</span>
         </div>
       )}
+      {/*P2*/}
+      {/* Épaisseur de tracé */}
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium">Épaisseur:</label>
+        <input
+          type="range"
+          min={1}
+          max={50}
+          step={1}
+          value={strokeWidth}
+          onChange={(e) => setStrokeWidth(Number(e.target.value))}
+        />
+        <span className="text-sm text-gray-600">{strokeWidth}px</span>
+      </div>
 
       <div className="w-px bg-gray-300"></div>
 

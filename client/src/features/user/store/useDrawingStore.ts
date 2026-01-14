@@ -2,6 +2,8 @@ import { create } from 'zustand';
 
 export type Tool = 'pen' | 'eraser';
 
+//P1
+//P2
 interface DrawingState {
   tool: Tool;
   color: string;

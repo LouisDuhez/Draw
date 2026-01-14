@@ -5,65 +5,57 @@ import { useDrawingStore } from "../../../user/store/useDrawingStore";
 import styles from './DrawArea.module.css';
 import { SocketManager } from "../../../../shared/services/SocketManager";
 import type { DrawStroke, Point } from "../../../../shared/types/drawing.type";
-
 export function DrawArea() {
   /**
-   * ===================
-   * 1. STATE & REFS
-   * ===================
+   * SECTION 1 — ÉTAT & RÉFÉRENCES
+   * - Refs pour éviter les re-render lors du dessin (performance)
+   * - Stores (utilisateur, outil, couleur, épaisseur)
    */
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Ces refs gèrent l'état "muet" du dessin (pas de re-render React) pour la performance
   const isDrawing = useRef(false);
   const lastCoordinates = useRef<{ x: number; y: number } | null>(null);
   const isEraser = useRef(false);
-  // Track les traits en cours de dessin pour ignorer leurs mises à jour serveur
   const currentlyDrawingTraits = useRef<Set<string>>(new Set());
 
-  // Stocke la taille "CSS" du canvas. C'est la référence pour calculer les pourcentages (0-1).
+  // Taille CSS du canvas (référence pour ratios 0-1)
   const canvasSize = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
   const { myUser } = useMyUserStore();
-  const { tool, color } = useDrawingStore();
-  
-  // Mémorisation pour éviter de recalculer inutilement si l'utilisateur peut dessiner
+  const { tool, color, strokeWidth } = useDrawingStore();
+
+  // L’utilisateur peut-il dessiner ?
   const canUserDraw = useMemo(() => myUser !== null, [myUser]);
-  
-  // Synchronisation : Quand le store (Zustand) change d'outil, on met à jour la ref interne
-  // On utilise une ref pour que 'onMouseMove' y accède sans devoir être recréé à chaque changement.
+
+  // Synchroniser l’état gomme avec le store sans recréer les handlers
   useEffect(() => {
     isEraser.current = tool === 'eraser';
   }, [tool]);
-  
-  // Stockage local des traits des autres utilisateurs (format relatif 0-1)
-  // Sert à redessiner tout le canvas proprement lors d'un resize de fenêtre.
+
+  // Historique temporaire des traits des autres (en relatif 0-1)
   const otherUserStrokes = useRef<Map<string, Point[]>>(new Map());
-  
-  // Références stables pour accéder aux valeurs actuelles du store dans les callbacks
+
+  // Refs stables des options de dessin (accès dans callbacks)
   const colorRef = useRef<string>(color);
   const toolRef = useRef<typeof tool>(tool);
-  
-  // Mise à jour des refs quand le store change
-  useEffect(() => {
-    colorRef.current = color;
-  }, [color]);
-  
-  useEffect(() => {
-    toolRef.current = tool;
-  }, [tool]);
+  const strokeWidthRef = useRef<number>(strokeWidth);
+
+  useEffect(() => { colorRef.current = color; }, [color]);
+  useEffect(() => { toolRef.current = tool; }, [tool]);
+  useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
 
   /**
-   * ===================
-   * 2. SYSTÈME DE COORDONNÉES (Cœur de la logique responsive)
-   * ===================
+   * SECTION 2 — COORDONNÉES (RELATIF/ABSOLU)
+   * Convertit pixels <-> ratios pour un rendu identique malgré les tailles d’écran.
    */
-  
-  // 
-  // INPUT: Pixels (ex: x=500 sur un écran de 1000px)
-  // OUTPUT: Ratio (ex: x=0.5)
-  // UTILISATION: Avant d'envoyer les données au serveur (Socket)
+
+  /**
+   * toRelative
+   * Entrée: point en pixels
+   * Sortie: point en ratio (0-1) basé sur la taille CSS du canvas
+   * Usage: avant envoi réseau
+   */
   const toRelative = useCallback((point: { x: number, y: number }) => {
     if (canvasSize.current.width === 0 || canvasSize.current.height === 0) return point;
     return {
@@ -72,9 +64,12 @@ export function DrawArea() {
     };
   }, []);
 
-  // INPUT: Ratio (ex: x=0.5)
-  // OUTPUT: Pixels actuels (ex: x=250 si l'écran a été redimensionné à 500px)
-  // UTILISATION: À la réception des données du serveur ou lors d'un resize
+  /**
+   * toAbsolute
+   * Entrée: point en ratio (0-1)
+   * Sortie: point en pixels selon la taille CSS courante
+   * Usage: à la réception réseau et au resize
+   */
   const toAbsolute = useCallback((point: { x: number, y: number }) => {
     return {
       x: point.x * canvasSize.current.width,
@@ -82,27 +77,36 @@ export function DrawArea() {
     };
   }, []);
 
-  // Récupère la position de la souris relative au coin haut-gauche du canvas
+  /**
+   * getCanvasCoordinates
+   * Coordonnées souris relatives au canvas.
+   */
   const getCanvasCoordinates = (e: MouseEvent | React.MouseEvent<HTMLCanvasElement>) => {
     return getCoordinatesRelativeToElement(e.clientX, e.clientY, canvasRef.current);
-  }
+  };
 
-  // Configuration dynamique du style du trait (Gomme = Gros et Blanc ou Transparent)
+  /**
+   * getOptions
+   * Calcule les options de style à partir du mode (gomme/stylo) et du store.
+   */
   const getOptions = useCallback((isEraserMode: boolean) => {
     return {
       color: isEraserMode ? '#FFFFFF' : colorRef.current,
-      width: isEraserMode ? 20 : 2,
+      width: strokeWidthRef.current,
     };
   }, []);
 
   /**
-   * ===================
-   * 3. MOTEUR DE DESSIN (Engine)
-   * ===================
+   * SECTION 3 — MOTEUR DE DESSIN (Canvas 2D)
+   * Unique point d’accès au contexte 2D. Optimisé et pur.
    */
-  
-  // Cette fonction est le seul point d'entrée vers le contexte 2D.
-  // Elle doit être pure et performante.
+
+  /**
+   * drawLine
+   * Trace une ligne (courbe quadratique pour la fluidité) entre deux points.
+   * - Gomme: utilise destination-out (efface réellement)
+   * - Stylo: source-over (dessine par-dessus)
+   */
   const drawLine = useCallback((
     from: { x: number; y: number },
     to: { x: number; y: number },
@@ -113,51 +117,51 @@ export function DrawArea() {
     if (!ctx) return;
 
     ctx.beginPath();
-    
+
     if (options) {
       ctx.lineWidth = options.width;
       ctx.strokeStyle = options.color;
-      
-      // LOGIQUE GOMME : 
-      // 'destination-out' rend les pixels transparents (efface vraiment le canvas).
-      // 'source-over' est le mode par défaut (peint par dessus).
-      if (options.isEraser) {
-        ctx.globalCompositeOperation = 'destination-out';
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-      }
+      ctx.globalCompositeOperation = options.isEraser ? 'destination-out' : 'source-over';
     }
 
+    // Courbe quadratique (plus lisse). Dot si from == to.
     ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
+    if (from.x === to.x && from.y === to.y) {
+      ctx.lineTo(to.x, to.y);
+    } else {
+      const cx = (from.x + to.x) / 2;
+      const cy = (from.y + to.y) / 2;
+      ctx.quadraticCurveTo(cx, cy, to.x, to.y);
+    }
     ctx.stroke();
-    
-    // IMPORTANT : Toujours remettre en mode normal après un trait pour ne pas bugger les prochains dessins
+
+    // Toujours revenir en mode normal
     ctx.globalCompositeOperation = 'source-over';
   }, []);
 
   /**
-   * ===================
-   * 4. GESTION DES INPUTS (Local User)
-   * ===================
+   * SECTION 4 — INPUTS UTILISATEUR (LOCAL)
+   * Gestion souris: move, down, up
    */
 
+  /**
+   * onMouseMove
+   * - Dessin immédiat en pixels (fluidité locale)
+   * - Conversion en relatif et envoi Socket
+   */
   const onMouseMove = useCallback((e: MouseEvent) => {
     if (!isDrawing.current) return;
-    
-    // A. Calcul immédiat en PIXELS pour une fluidité parfaite (zéro latence perçue)
+
     const coordinates = getCanvasCoordinates(e);
     const from = lastCoordinates.current ?? coordinates;
     const options = getOptions(isEraser.current);
-    
-    // B. Dessin visuel immédiat
+
+    // Rendu immédiat local
     drawLine(from, coordinates, { ...options, isEraser: isEraser.current });
     lastCoordinates.current = coordinates;
 
-    // C. Conversion en RELATIF (0-1) avant envoi réseau
-    // Cela rend les données indépendantes de la taille d'écran de l'utilisateur
+    // Envoi réseau (coordonnées relatives)
     const relativeCoords = toRelative(coordinates);
-
     SocketManager.emit('draw:move', {
       x: relativeCoords.x,
       y: relativeCoords.y,
@@ -167,34 +171,39 @@ export function DrawArea() {
     } as any);
   }, [drawLine, toRelative]);
 
+  /**
+   * onMouseUp
+   * Fin du trait: reset local + notification Socket.
+   */
   const onMouseUp = useCallback(() => {
     isDrawing.current = false;
     lastCoordinates.current = null;
-    // On arrête d'ignorer nos traits du serveur une fois qu'on a fini de dessiner
     currentlyDrawingTraits.current.clear();
     SocketManager.emit('draw:end');
   }, []);
 
+  /**
+   * onMouseDown
+   * Début du trait: init local, dot initial, envoi Socket, bind move/up.
+   */
   const onMouseDown: React.MouseEventHandler<HTMLCanvasElement> = useCallback((e) => {
-    if (!canUserDraw) { return; }
+    if (!canUserDraw) return;
 
     const canvas = e.currentTarget;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const coordinates = getCanvasCoordinates(e);
-    
-    // Ne pas appeler beginPath/moveTo ici, drawLine le fera
+
     isDrawing.current = true;
     lastCoordinates.current = coordinates;
-    
-    // Dessin du point initial (un clic sans bouger fait un point)
+
+    // Point initial (clic immobile)
     const options = getOptions(isEraser.current);
     drawLine(coordinates, coordinates, { ...options, isEraser: isEraser.current });
 
+    // Envoi du début de trait (relatif + style)
     const relativeCoords = toRelative(coordinates);
-
-    // Envoi du début de trait aux autres (avec les métadonnées de style)
     SocketManager.emit('draw:start', {
       x: relativeCoords.x,
       y: relativeCoords.y,
@@ -203,42 +212,45 @@ export function DrawArea() {
       isEraser: isEraser.current
     } as any);
 
-    // Ajout des listeners sur window ou canvas (canvasRef ici) pour suivre le drag
+    // Écoute du drag sur le canvas
     canvasRef.current?.addEventListener('mousemove', onMouseMove);
     canvasRef.current?.addEventListener('mouseup', onMouseUp);
   }, [canUserDraw, onMouseMove, onMouseUp, drawLine, toRelative]);
 
   /**
-   * ===================
-   * 5. GESTION DE LA TAILLE (Responsive)
-   * ===================
+   * SECTION 5 — RESPONSIVE & DPR
+   * Calcule et applique les dimensions canvas + scale DPR pour éviter le flou.
    */
 
+  /**
+   * setCanvasDimensions
+   * - Calcule width/height (16:9)
+   * - Met à l’échelle interne selon le DPR
+   * - Configure le contexte (scale, lineCap, lineJoin)
+   */
   const setCanvasDimensions = useCallback(() => {
     if (!canvasRef.current || !parentRef.current) return;
 
-    // Gestion des écrans Retina/4K (DPR > 1) pour éviter le flou
     const dpr = window.devicePixelRatio || 1;
     const parentWidth = parentRef.current.clientWidth;
-    
-    // Définition du ratio 16/9
+
+    // Ratio 16/9
     const canvasWidth = parentWidth;
     const canvasHeight = Math.round(parentWidth * 9 / 16);
 
-    // Mise à jour de la référence pour les calculs de conversion
+    // Référence pour conversions relatif/absolu
     canvasSize.current = { width: canvasWidth, height: canvasHeight };
 
-    // Taille interne réelle (ex: 2000px pour un affichage CSS de 1000px si DPR=2)
+    // Taille interne (pixels physiques)
     canvasRef.current.width = dpr * canvasWidth;
     canvasRef.current.height = dpr * canvasHeight;
 
-    // Taille d'affichage CSS
+    // Taille CSS (affichage)
     parentRef.current.style.setProperty('--canvas-width', `${canvasWidth}px`);
     parentRef.current.style.setProperty('--canvas-height', `${canvasHeight}px`);
 
     const ctx = canvasRef.current.getContext("2d");
     if (ctx) {
-      // On scale le contexte pour que dessiner à (10,10) dessine en réalité à (20,20) sur écran retina
       ctx.scale(dpr, dpr);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -246,24 +258,24 @@ export function DrawArea() {
   }, []);
 
   /**
-   * ===================
-   * 6. RENDU DISTANT (Multiplayer)
-   * ===================
+   * SECTION 6 — RENDU DISTANT (TEMPS RÉEL)
+   * Dessine les points (relatifs) reçus du réseau après conversion.
    */
 
-  // Fonction utilitaire pour dessiner une série de points reçus
+  /**
+   * drawOtherUserPoints
+   * Redessine une série de points (relatifs -> absolus) pour un socketId.
+   * Stocke l’historique temporaire afin d’éviter les redessins inutiles.
+   */
   const drawOtherUserPoints = useCallback((points: Point[], socketId?: string, options?: { color?: string; strokeWidth?: number; isEraser?: boolean }) => {
     const previousPoints = socketId ? otherUserStrokes.current.get(socketId) || [] : [];
 
     points.forEach((point, index) => {
-      // Optimisation : Ne pas redessiner ce qui l'est déjà
+      // Skip si déjà dessiné
       if (previousPoints[index]) return;
 
-      // ÉTAPE CRUCIALE : Conversion Relatif (0.5) -> Absolu (500px)
-      // C'est ici que l'adaptation à la taille de l'écran du récepteur se fait
+      // Conversion ratio -> pixels
       const to = toAbsolute(point);
-      
-      // Calcul du point de départ du trait
       const prevPointRel = index === 0 ? point : points[index - 1];
       const from = toAbsolute(prevPointRel);
 
@@ -275,35 +287,30 @@ export function DrawArea() {
 
       drawLine(from, to, drawOptions);
     });
-    
-    // Stocker les points dessinés pour ne pas les redessiner
+
+    // Mémorise ce qui a été dessiné pour ce socketId
     if (socketId) {
       otherUserStrokes.current.set(socketId, points);
     }
   }, [drawLine, toAbsolute]);
 
   /**
-   * Handlers Socket - Réception des données
+   * Handlers Socket — Réception des événements
    */
   const onOtherUserDrawMove = useCallback((payload: DrawStroke) => {
-    // Ignorer nos propres traits (on les dessine déjà en local)
     if (payload.socketId === SocketManager.socketId) return;
-    // Note : payload contient des coordonnées relatives (0-1)
     const isEraserStroke = (payload as any).isEraser ?? false;
     drawOtherUserPoints(payload.points, payload.socketId, { color: payload.color, strokeWidth: payload.strokeWidth, isEraser: isEraserStroke });
   }, [drawOtherUserPoints]);
 
   const onOtherUserDrawStart = useCallback((payload: DrawStroke) => {
-    // Ignorer nos propres traits (on les dessine déjà en local)
     if (payload.socketId === SocketManager.socketId) return;
     const isEraserStroke = (payload as any).isEraser ?? false;
     drawOtherUserPoints(payload.points, payload.socketId, { color: payload.color, strokeWidth: payload.strokeWidth, isEraser: isEraserStroke });
-    // On initialise l'historique pour ce socketId
     otherUserStrokes.current.set(payload.socketId, payload.points);
   }, [drawOtherUserPoints]);
-  
+
   const onOtherUserDrawEnd = useCallback((payload: DrawStroke) => {
-    // Nettoyage mémoire une fois le trait fini
     otherUserStrokes.current.delete(payload.socketId);
   }, []);
 
@@ -316,23 +323,25 @@ export function DrawArea() {
   }, []);
 
   /**
-   * 7. CHARGEMENT ET RESIZE
-   * Cette fonction est critique pour le responsive : elle redessine tout.
+   * SECTION 7 — CHARGEMENT & REDESSIN (RESIZE)
+   * Recharge l’historique des traits et redessine après changement de dimensions.
+   */
+
+  /**
+   * getAllStrokes
+   * Vide le canvas puis redessine tout l’historique (ratio -> pixels).
    */
   const getAllStrokes = useCallback(() => {
     const loadStrokes = async () => {
       const ctx = canvasRef.current?.getContext('2d');
-      // On efface tout le canvas car lors d'un resize, les pixels changent de place
       if(ctx && canvasRef.current) {
          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
 
       const response = await SocketManager.get('strokes');
       const strokes = response?.strokes || [];
-
       if (!strokes.length) return;
 
-      // On redessine tout l'historique en utilisant les nouvelles dimensions (grâce à toAbsolute dans drawOtherUserPoints)
       strokes.forEach(stroke => {
         if (!stroke.points || stroke.points.length === 0) return;
         const isEraserStroke = (stroke as any).isEraser ?? false;
@@ -342,26 +351,30 @@ export function DrawArea() {
     loadStrokes();
   }, [drawOtherUserPoints]);
 
-  // Observer de redimensionnement de la fenêtre
+  /**
+   * SECTION 8 — EFFETS (RESIZE OBSERVER, SOCKETS, INIT)
+   */
+
+  // Redessiner automatiquement au resize du conteneur
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
-      setCanvasDimensions(); // 1. Recalculer width/height
-      getAllStrokes();       // 2. Redessiner tout avec les nouveaux ratios
+      setCanvasDimensions();
+      getAllStrokes();
     });
-    
+
     if (parentRef.current) {
       resizeObserver.observe(parentRef.current);
     }
     return () => resizeObserver.disconnect();
   }, [setCanvasDimensions, getAllStrokes]);
 
-  // Initialisation des Sockets
+  // Écoute des événements sockets
   useEffect(() => {
     SocketManager.listen('draw:start', onOtherUserDrawStart);
     SocketManager.listen('draw:end', onOtherUserDrawEnd);
     SocketManager.listen('draw:move', onOtherUserDrawMove);
     SocketManager.listen('canvas:reset', onCanvasReset);
-    
+
     return () => {
       SocketManager.off('draw:start');
       SocketManager.off('draw:end');
@@ -370,7 +383,7 @@ export function DrawArea() {
     }
   }, [onOtherUserDrawStart, onOtherUserDrawEnd, onOtherUserDrawMove, onCanvasReset]);
 
-  // Premier chargement
+  // Initialisation (dimensions + premier rendu)
   useEffect(() => {
     setCanvasDimensions();
     getAllStrokes();
@@ -378,9 +391,9 @@ export function DrawArea() {
 
   return (
     <div className={[styles.drawArea, 'w-full', 'h-full', 'overflow-hidden', 'flex', 'items-center'].join(' ')} ref={parentRef}>
-      <canvas 
-        className={[styles.drawArea__canvas, 'border-1'].join(' ')} 
-        onMouseDown={onMouseDown} 
+      <canvas
+        className={[styles.drawArea__canvas, 'border-1'].join(' ')}
+        onMouseDown={onMouseDown}
         ref={canvasRef}
       />
     </div>

@@ -1,0 +1,31 @@
+.drawLayout {
+    height: 100vh;
+    width: 100%;
+    display: grid;
+    padding: 24px 48px;
+    grid-gap: 24px;
+    grid-template-columns: repeat(5, 1fr);
+    grid-template-areas:
+        "top top top top top"
+        "content content content content right"
+        "content content content content right"
+        "content content content content right"
+        "content content content content right"
+        "content content content content right"
+        "bottom bottom bottom bottom right";
+}
+.drawLayout__top {
+    grid-area: top;
+}
+.drawLayout__content {
+    grid-area: content;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.drawLayout__bottom {
+    grid-area: bottom;
+}
+.drawLayout__right {
+    grid-area: right;
+}

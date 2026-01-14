@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Documentation de l’API</title>
+  <style>
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+      padding: 72px 0;
+    }
+
+    header,
+    main {
+      margin: 0 auto;
+      max-width: 600px;
+    }
+
+    code {
+        display: inline-flex;
+        padding: 4px;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        background-color: #dadaf8;
+    }
+
+    li {
+        margin: 16px 0;
+        list-style: none;
+    }
+
+    .clientToServer,
+    .serverToAll,
+    .serverToClient {
+      background-color: #cee3ea;
+    }
+
+    .clientToServer:before,
+    .serverToAll:before,
+    .serverToClient:before {
+        margin-right: 8px;
+        text-transform: uppercase;
+        font-size: smaller;
+        font-weight: bold;
+        padding: 2px;
+    }
+
+    .clientToServer:before {
+        content: 'Client → Server';
+        color: #6161bb;
+    }
+
+    .serverToAll:before {
+        content: 'Server → All';
+        color: #bb61aa;
+    }
+
+    .serverToClient:before {
+        content: 'Server → Client';
+        color: #935eed;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bienvenue sur l’API</h1>
+  </header>
+  <main>
+    <p>Cette API permet d’accéder aux données de l’application. Vous pouvez utiliser les endpoints listés ci-dessous pour récupérer les informations dont vous avez besoin.</p>
+    <ul>
+      <li><code class="clientToServer">myUser:join</code><br> – Un utilisateur cherche à rejoindre le dessin</li>
+      <li><code class="serverToClient">myUser:joined</code><br> – L'utilisateur a bien été crée, le serveur retourne l'utilisateur crée</li>
+      <li><code class="serverToAll">user:joined</code><br> – Un utilisateur vient de rejoindre le serveur</li>
+      <li><code class="serverToAll">users:updated</code><br> – La liste des utilisateurs vient d'être modifiée (edit d'un user, nouveau user, user qui quitte le serveur...)</li>
+      <li><code class="clientToServer">user:edit</code><br> – Pour permettre de modifier les informations d'un joueur (pseudo, avatar..)</li>
+      <li><code class="serverToAll">user:left</code><br> – Un joueur a quitté la partie</li>
+      <li><code class="clientToServer">draw:start</code><br> – Un utilisateur commence à dessiner</li>
+      <li><code class="clientToServer">draw:move</code><br> – Un utilisateur continue de dessiner</li>
+      <li><code class="clientToServer">draw:end</code><br> – L'utilisateur a fini de dessiner</li>
+      <li><code class="serverToAll">draw:start</code><br> – Un utilisateur commence à dessiner</li>
+      <li><code class="serverToAll">draw:move</code><br> – Un utilisateur continue de dessiner</li>
+      <li><code class="serverToAll">draw:end</code><br> – L'utilisateur a fini de dessiner</li>
+      <li><code class="serverToAll">draw:clear</code><br> – L'utilisateur a fini de dessiner</li>
+    </ul>
+  </main>
+</body>
+</html>

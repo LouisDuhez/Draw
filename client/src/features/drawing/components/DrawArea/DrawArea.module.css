@@ -1,0 +1,12 @@
+.drawArea {
+  position: relative;
+}
+
+.drawArea__canvas {
+  --width: 100%;
+  --height: auto;
+  display: block;
+  box-sizing: border-box;
+  width: var(--width);
+  height: var(--height);
+}

@@ -1,0 +1,18 @@
+.instructions {
+  color: var(--color-base-content);
+  background-color: var(--alert-color, var(--color-base-200));
+  box-shadow: var(--shadow-md);
+  padding:  16px 24px;
+  border-radius: 8px;
+}
+
+.instructions ul {
+  list-style: square;
+  padding-left: 16px;
+}
+
+.instructions code {
+  color: var(--color-error);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
